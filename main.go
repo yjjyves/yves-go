@@ -3,10 +3,12 @@ package main
 import (
 	"fmt"
 	"net/http"
+	"os"
 	"yves-go/api"
 	"yves-go/service"
 
 	"github.com/gin-gonic/gin"
+	"github.com/sirupsen/logrus"
 )
 
 func main() {
@@ -41,5 +43,8 @@ func main() {
 	if err != nil {
 		fmt.Println("启动失败!")
 	}
-	fmt.Println("启动完成!")
+
+	logrus.SetLevel(logrus.InfoLevel)
+	logrus.SetFormatter(&logrus.JSONFormatter{})
+	logrus.SetOutput(os.Stdout)
 }

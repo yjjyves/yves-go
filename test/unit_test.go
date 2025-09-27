@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"testing"
 	"time"
+
+	"github.com/sirupsen/logrus"
 )
 
 func waitReceive(chan1 chan int) {
@@ -44,5 +46,29 @@ func TestT2(t *testing.T) {
 	for i := range chan1 {
 		fmt.Println(i)
 	}
+
+}
+
+func Test3(t *testing.T) {
+	// 不同级别日志
+	logrus.Debug("调试信息") // 不会输出，因为级别是 Info
+	logrus.Info("普通信息")
+	logrus.Warn("警告信息")
+	logrus.Error("错误信息")
+	// logrus.Fatal("致命错误")  // 会退出程序
+	// logrus.Panic("Panic日志") // 会 panic
+
+	// 带字段的结构化日志
+	logrus.WithFields(logrus.Fields{
+		"user_id": 12345,
+		"ip":      "192.168.1.1",
+		"event":   "login",
+	}).Info("用户登录")
+
+	// 更简洁的字段写法
+	logrus.
+		WithField("user_id", 12345).
+		WithField("action", "purchase").
+		Info("用户购买商品")
 
 }
