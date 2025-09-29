@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/apolloconfig/agollo/v4/component/log"
+	"github.com/sirupsen/logrus"
 )
 
 // WorkerPool 定义工作池
@@ -12,6 +12,7 @@ type WorkerPool struct {
 	worker    int
 	taskQueue chan func()
 	wg        sync.WaitGroup
+	closeOnce sync.Once
 }
 
 // NewWorkerPool 构造工作池
@@ -36,10 +37,10 @@ func (pool *WorkerPool) Start() {
 func (pool *WorkerPool) Worker(id int) {
 	defer pool.wg.Done()
 	for task := range pool.taskQueue {
-		log.Info("worker ", id, " start to process task")
+		logrus.Info("worker ", id, " start to process task")
 		task()
 	}
-	log.Info("worker ", id, " finish process task")
+	logrus.Info("worker ", id, " finish process task")
 }
 
 func (pool *WorkerPool) Submit(task func()) {
@@ -56,6 +57,9 @@ func (pool *WorkerPool) SubmitWithTimeout(ctx context.Context, task func()) erro
 }
 
 func (pool *WorkerPool) Stop() {
-	close(pool.taskQueue)
-	pool.wg.Wait()
+	pool.closeOnce.Do(func() {
+		close(pool.taskQueue)
+		pool.wg.Wait()
+	})
+
 }

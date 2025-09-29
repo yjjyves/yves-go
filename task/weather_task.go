@@ -4,25 +4,33 @@ import (
 	"time"
 	"yves-go/util"
 
-	"github.com/apolloconfig/agollo/v4/component/log"
+	"github.com/sirupsen/logrus"
 )
 
 func AddWeatherTask() {
-	ticket := time.NewTicker(time.Second * 30)
-	defer ticket.Stop()
+	logrus.Info("AddWeatherTask init")
+	ticket := time.NewTicker(time.Second * 10)
 
 	go func() {
 		for {
 			select {
 			case <-ticket.C:
-				log.Info("AddWeatherTask start")
+				logrus.Info("AddWeatherTask start")
 				AddWeather2Cache()
 			}
 		}
 	}()
-
 }
 
 func AddWeather2Cache() {
-	log.Info("AddWeather2Cache start id:", util.NewSnowflake())
+	pool := NewWorkerPool(2, 10)
+	pool.Submit(func() {
+		logrus.Info("AddWeather2Cache start1 id:", util.NewSnowflake())
+		time.Sleep(time.Second * 2)
+	})
+
+	pool.Submit(func() {
+		logrus.Info("AddWeather2Cache start2 id:", util.NewSnowflake())
+		time.Sleep(time.Second * 2)
+	})
 }
