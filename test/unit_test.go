@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"testing"
 	"time"
+	"yves-go/util"
 
 	"github.com/sirupsen/logrus"
 )
@@ -71,4 +72,9 @@ func Test3(t *testing.T) {
 		WithField("action", "purchase").
 		Info("用户购买商品")
 
+}
+
+func TestT4(t *testing.T) {
+	id := util.NewSnowflake()
+	logrus.Info("id: ", id)
 }

@@ -6,6 +6,8 @@ import (
 	"os"
 	"yves-go/api"
 	"yves-go/service"
+	"yves-go/task"
+	"yves-go/video"
 
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
@@ -22,12 +24,14 @@ func main() {
 
 	api.RegisterNewsQueryApi(r)
 	api.RegisterUserQueryApi(r)
+	video.RegisterVideoOffer(r)
+	task.AddWeatherTask()
 
 	// 先初始化Java服务消费者（必须在DubboInit之前）
-	service.InitJavaUserServiceConsumer()
-
-	// 然后初始化Dubbo服务
-	service.DubboInit()
+	//service.InitJavaUserServiceConsumer()
+	//
+	//// 然后初始化Dubbo服务
+	//service.DubboInit()
 
 	// 添加测试Java服务的API
 	r.GET("/test-java-service", func(c *gin.Context) {

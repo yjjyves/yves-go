@@ -1,0 +1,270 @@
+<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>WebRTC 高质量推流到 Go</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        video { width: 320px; height: 240px; border: 1px solid #ccc; }
+        .status { margin: 10px 0; padding: 10px; background: #f0f0f0; border-radius: 5px; }
+        .error { background: #ffebee; color: #c62828; }
+        .success { background: #e8f5e8; color: #2e7d32; }
+        .info { background: #e3f2fd; color: #1565c0; }
+        button { padding: 10px 20px; margin: 5px; background: #2196f3; color: white; border: none; border-radius: 3px; cursor: pointer; }
+        button:hover { background: #1976d2; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        .config { margin: 10px 0; padding: 10px; background: #f9f9f9; border-radius: 5px; }
+        select, input { margin: 5px; padding: 5px; }
+    </style>
+</head>
+<body>
+<h2>WebRTC 高质量推流到 Go 服务器</h2>
+
+<div class="status info" id="status">正在初始化...</div>
+
+<div class="config">
+    <h4>编码器配置:</h4>
+    <label>视频编码器:
+        <select id="videoCodec">
+            <option value="VP8">VP8 (推荐)</option>
+            <option value="VP9">VP9</option>
+            <option value="H264">H.264</option>
+        </select>
+    </label>
+    <label>分辨率:
+        <select id="resolution">
+            <option value="640x480">640x480 (推荐)</option>
+            <option value="1280x720">1280x720</option>
+            <option value="1920x1080">1920x1080</option>
+        </select>
+    </label>
+    <label>帧率:
+        <select id="framerate">
+            <option value="30">30fps (推荐)</option>
+            <option value="24">24fps</option>
+            <option value="60">60fps</option>
+        </select>
+    </label>
+    <label>比特率:
+        <input type="range" id="bitrate" min="500" max="5000" value="1000" step="100">
+        <span id="bitrateValue">1000</span> kbps
+    </label>
+</div>
+
+<video id="localVideo" autoplay muted playsinline></video>
+
+<div>
+    <button id="startBtn" onclick="start()">开始推流</button>
+    <button id="stopBtn" onclick="stop()" disabled>停止推流</button>
+    <button id="testBtn" onclick="testConnection()">测试连接</button>
+</div>
+
+<div class="status" id="stats"></div>
+
+<script>
+    const localVideo = document.getElementById('localVideo');
+    const statusDiv = document.getElementById('status');
+    const statsDiv = document.getElementById('stats');
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const bitrateSlider = document.getElementById('bitrate');
+    const bitrateValue = document.getElementById('bitrateValue');
+
+    let pc = null;
+    let stream = null;
+
+    // 更新比特率显示
+    bitrateSlider.oninput = function() {
+        bitrateValue.textContent = this.value;
+    };
+
+    function updateStatus(message, type = 'info') {
+        statusDiv.textContent = message;
+        statusDiv.className = `status ${type}`;
+        console.log(`[${type.toUpperCase()}] ${message}`);
+    }
+
+    function updateStats(stats) {
+        statsDiv.innerHTML = `<h4>连接统计:</h4><pre>${stats}</pre>`;
+    }
+
+    async function start() {
+        try {
+            updateStatus('正在获取摄像头...', 'info');
+            startBtn.disabled = true;
+
+            // 获取配置
+            const resolution = document.getElementById('resolution').value.split('x');
+            const framerate = parseInt(document.getElementById('framerate').value);
+            const bitrate = parseInt(document.getElementById('bitrate').value) * 1000;
+
+            // 获取摄像头，指定视频约束
+            stream = await navigator.mediaDevices.getUserMedia({
+                video: {
+                    width: { ideal: parseInt(resolution[0]) },
+                    height: { ideal: parseInt(resolution[1]) },
+                    frameRate: { ideal: framerate, max: framerate }
+                },
+                audio: true
+            });
+
+            localVideo.srcObject = stream;
+            updateStatus('摄像头获取成功', 'success');
+
+            // 创建 PeerConnection
+            pc = new RTCPeerConnection({
+                iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+            });
+
+            // 添加轨道
+            stream.getTracks().forEach(track => {
+                const sender = pc.addTrack(track, stream);
+
+                // 如果是视频轨道，设置编码器参数
+                if (track.kind === 'video') {
+                    // 设置编码器参数
+                    const params = sender.getParameters();
+                    if (params.encodings && params.encodings.length > 0) {
+                        params.encodings[0].maxBitrate = bitrate;
+                        params.encodings[0].maxFramerate = framerate;
+                        sender.setParameters(params);
+                    }
+                }
+            });
+
+            // 创建 offer 并设置编码器约束
+            const offer = await pc.createOffer({
+                offerToReceiveAudio: false,
+                offerToReceiveVideo: false
+            });
+            console.log(`offer`, offer);
+            await pc.setLocalDescription(offer);
+
+            updateStatus('正在发送offer...', 'info');
+
+            const resp = await fetch("/offer", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(offer)
+            });
+
+            if (!resp.ok) {
+                throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
+            }
+
+            const answer = await resp.json();
+            await pc.setRemoteDescription(answer);
+
+            updateStatus('连接建立成功！', 'success');
+            stopBtn.disabled = false;
+
+            // 开始监控统计信息
+            monitorStats();
+
+            // 监听连接状态
+            pc.onconnectionstatechange = () => {
+                updateStatus(`连接状态: ${pc.connectionState}`, 'info');
+            };
+
+            pc.oniceconnectionstatechange = () => {
+                updateStatus(`ICE连接状态: ${pc.iceConnectionState}`, 'info');
+            };
+
+            pc.onicegatheringstatechange = () => {
+                updateStatus(`ICE收集状态: ${pc.iceGatheringState}`, 'info');
+            };
+
+            // 监听错误
+            pc.onerror = (error) => {
+                updateStatus(`WebRTC错误: ${error.message}`, 'error');
+                console.error('WebRTC错误:', error);
+            };
+
+        } catch (error) {
+            updateStatus(`启动失败: ${error.message}`, 'error');
+            console.error('启动错误:', error);
+            startBtn.disabled = false;
+        }
+    }
+
+    function stop() {
+        if (stream) {
+            stream.getTracks().forEach(track => track.stop());
+            stream = null;
+        }
+
+        if (pc) {
+            pc.close();
+            pc = null;
+        }
+
+        localVideo.srcObject = null;
+        updateStatus('推流已停止', 'info');
+        startBtn.disabled = false;
+        stopBtn.disabled = true;
+        statsDiv.innerHTML = '';
+    }
+
+    async function testConnection() {
+        try {
+            updateStatus('测试服务器连接...', 'info');
+            const resp = await fetch("/offer/test", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ test: true })
+            });
+
+            if (resp.ok) {
+                updateStatus('服务器连接正常', 'success');
+            } else {
+                updateStatus(`服务器响应错误: ${resp.status}`, 'error');
+            }
+        } catch (error) {
+            updateStatus(`连接测试失败: ${error.message}`, 'error');
+        }
+    }
+
+    async function monitorStats() {
+        if (!pc) return;
+
+        try {
+            const stats = await pc.getStats();
+            let statsText = '';
+
+            stats.forEach(report => {
+                if (report.type === 'outbound-rtp' && report.mediaType === 'video') {
+                    statsText += `视频编码器: ${report.codecId || 'unknown'}\n`;
+                    statsText += `编码帧数: ${report.framesEncoded || 0}\n`;
+                    statsText += `编码比特率: ${Math.round((report.bytesSent || 0) / 1000)} kbps\n`;
+                    statsText += `编码时间: ${report.totalEncodeTime || 0} ms\n`;
+                    statsText += `关键帧数: ${report.keyFramesEncoded || 0}\n`;
+                }
+
+                if (report.type === 'outbound-rtp' && report.mediaType === 'audio') {
+                    statsText += `音频编码器: ${report.codecId || 'unknown'}\n`;
+                    statsText += `音频比特率: ${Math.round((report.bytesSent || 0) / 1000)} kbps\n`;
+                }
+
+                if (report.type === 'candidate-pair' && report.state === 'succeeded') {
+                    statsText += `RTT: ${Math.round((report.currentRoundTripTime || 0) * 1000)} ms\n`;
+                    statsText += `丢包率: ${report.packetsLost || 0} packets\n`;
+                }
+            });
+
+            updateStats(statsText);
+
+            // 每5秒更新一次统计信息
+            setTimeout(monitorStats, 5000);
+
+        } catch (error) {
+            console.error('获取统计信息失败:', error);
+        }
+    }
+
+    // 页面加载时自动测试连接
+    window.onload = () => {
+        testConnection();
+    };
+</script>
+</body>
+</html>
