@@ -7,4 +7,5 @@ type NewsDocument struct {
 	PublishedAt string   `json:"published_at"`
 	Tags        []string `json:"tags"`
 	Speech      string   `json:"speech"`
+	Score       float64  `json:"score"`
 }

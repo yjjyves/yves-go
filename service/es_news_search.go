@@ -1,8 +1,10 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"log"
+	"strings"
 	"yves-go/entity"
 	"yves-go/req"
 	"yves-go/resp"
@@ -19,7 +21,7 @@ type EsNewsSearchService struct {
 func (esNewsSearchService *EsNewsSearchService) EsNewsSearch(req *req.NewsQueryReqVO) []*resp.NewsQueryRespVO {
 	b, _ := json.Marshal(req)
 	log.Printf("EsNewsSearchService.EsNewsSearch param: %s", string(b))
-	res := util.Search(req.Language)
+	res := Search(req.Language, "", "", "")
 	return ConvertDocumentsToRespVO(res)
 }
 
@@ -36,4 +38,136 @@ func ConvertDocumentsToRespVO(docs []*entity.NewsDocument) []*resp.NewsQueryResp
 	}
 
 	return respList
+}
+
+func Search(index string, keyword string, title string, content string) []*entity.NewsDocument {
+	//query := `{
+	//    "query": {
+	//        "match_all": {}
+	//    },
+	//    "from": 0,
+	//    "size": 5
+	//}`
+
+	query, _ := GenerateDynamicQuery(keyword, title, content)
+	log.Println(query)
+
+	header := map[string]string{
+		"Content-Type": "application/json",
+	}
+
+	res, err := util.Client.Search(
+		util.Client.Search.WithContext(context.Background()),
+		util.Client.Search.WithIndex(index),
+		util.Client.Search.WithBody(strings.NewReader(query)),
+		util.Client.Search.WithHeader(header),
+	)
+	if err != nil {
+		log.Printf("Error getting response: %s", err)
+		return nil
+	}
+	defer func() { _ = res.Body.Close() }()
+
+	var r struct {
+		Hits struct {
+			Hits []struct {
+				Source entity.NewsDocument `json:"_source"`
+				Score  float64             `json:"_score"`
+			} `json:"hits"`
+		} `json:"hits"`
+	}
+
+	if err := json.NewDecoder(res.Body).Decode(&r); err != nil {
+		log.Printf("Error parsing response: %s", err)
+		return nil
+	}
+
+	var newsList []*entity.NewsDocument
+	for _, hit := range r.Hits.Hits {
+		n := hit.Source
+		n.Score = hit.Score
+		newsList = append(newsList, &n)
+	}
+
+	return newsList
+}
+
+// GenerateDynamicQuery 动态生成 Elasticsearch 查询体
+func GenerateDynamicQuery(keyword string, title string, content string) (string, error) {
+	// 存储所有需要满足的匹配条件
+	mustClauses := make([]map[string]interface{}, 0)
+
+	// 1. 检查 Title 关键词
+	if keyword := strings.TrimSpace(keyword); keyword != "" {
+		mustClauses = append(mustClauses, map[string]interface{}{
+			"match": map[string]interface{}{
+				"title": keyword,
+			},
+		})
+	}
+
+	// 2. 检查 Content 关键词
+	if content := strings.TrimSpace(content); content != "" {
+		mustClauses = append(mustClauses, map[string]interface{}{
+			"match": map[string]interface{}{
+				"content": content,
+			},
+		})
+	}
+
+	// 3. 检查 Keywords 关键词 (假设字段名为 tags)
+	if title := strings.TrimSpace(title); title != "" {
+		// 注意: 对于 tags/keywords 字段，如果希望精确匹配，可能使用 term 或 terms
+		// 如果希望分词搜索，则使用 match
+		mustClauses = append(mustClauses, map[string]interface{}{
+			"match": map[string]interface{}{
+				"title": title, // 假设字段名为 tags
+			},
+		})
+	}
+
+	// kNN 查询体
+	queryVector, err := GetEmbedding(content)
+	if err != nil {
+		log.Println("get embedding error:", err)
+		return "", err
+	}
+	knnQuery := map[string]interface{}{
+		"field":          "content_vector", // 存储标题向量的字段名
+		"query_vector":   queryVector,      // all-MiniLM-L6-v2 生成的查询向量
+		"k":              10,               // 最终返回的结果数量 (Nearest Neighbors)
+		"num_candidates": 100,              // 搜索时考虑的文档数量 (影响准确性和速度)
+		// 如果需要，可以在这里添加 'filter' 来进行混合搜索 (例如：先按关键词过滤，再进行向量搜索)
+		// "filter": []interface{}{
+		//     map[string]interface{}{"term": map[string]interface{}{"category": "tech"}},
+		// },
+	}
+
+	queryBody := map[string]interface{}{
+		"from": 0,
+		"size": 10,
+		"knn":  knnQuery,
+	}
+
+	if len(mustClauses) > 0 {
+		// 如果存在任何有效的关键词，则使用 bool/must
+		queryBody["query"] = map[string]interface{}{
+			"bool": map[string]interface{}{
+				"must": mustClauses, // 逻辑 AND：必须同时满足所有非空的条件
+			},
+		}
+	} else {
+		// 如果所有关键词都为空，则使用 match_all 查全部
+		//queryBody["query"] = map[string]interface{}{
+		//	"match_all": map[string]interface{}{},
+		//}
+	}
+
+	// 将 Go 结构体序列化为 JSON 字符串
+	jsonBody, err := json.MarshalIndent(queryBody, "", "    ")
+	if err != nil {
+		return "", err
+	}
+
+	return string(jsonBody), nil
 }
