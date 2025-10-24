@@ -7,9 +7,12 @@ require (
 	github.com/Shopify/sarama v1.30.0
 	github.com/apache/dubbo-go-hessian2 v1.12.5
 	github.com/apolloconfig/agollo/v4 v4.4.0
+	github.com/bwmarrin/snowflake v0.3.0
 	github.com/elastic/go-elasticsearch/v8 v8.11.1
 	github.com/gin-gonic/gin v1.10.1
+	github.com/go-sql-driver/mysql v1.8.1
 	github.com/jinzhu/copier v0.4.0
+	github.com/jmoiron/sqlx v1.4.0
 	github.com/pion/webrtc/v4 v4.1.4
 	github.com/sirupsen/logrus v1.9.3
 	github.com/sony/sonyflake v1.3.0
@@ -31,6 +34,7 @@ require (
 require (
 	cloud.google.com/go/compute v1.14.0 // indirect
 	cloud.google.com/go/compute/metadata v0.2.3 // indirect
+	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/RoaringBitmap/roaring v1.2.3 // indirect
 	github.com/Workiva/go-datastructures v1.0.52 // indirect
 	github.com/afex/hystrix-go v0.0.0-20180502004556-fa1af6a1f4f5 // indirect
