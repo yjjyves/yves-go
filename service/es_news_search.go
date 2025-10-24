@@ -222,10 +222,8 @@ func MultiSearch(indexName string, query string, keyword string, title string, c
 	}()
 
 	// 确保在所有 goroutine 完成后关闭 channel
-	go func() {
-		wg.Wait()
-		close(resultChan)
-	}()
+	wg.Wait()
+	close(resultChan)
 
 	// --- 3. 进行RRF融合排序,收集结果 ---
 	var resultLists [][]*entity.NewsDocument
