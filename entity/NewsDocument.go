@@ -8,4 +8,5 @@ type NewsDocument struct {
 	Tags        []string `json:"tags"`
 	Speech      string   `json:"speech"`
 	Score       float64  `json:"score"`
+	Id          string   `json:"id"`
 }

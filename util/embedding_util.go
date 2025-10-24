@@ -1,4 +1,4 @@
-package service
+package util
 
 import (
 	"bytes"
@@ -139,7 +139,6 @@ func GetSimilarity(text1 string, text2 string) (float64, error) {
 }
 
 func BatchGetSimilarity(text1 string, texts []string) ([]BatchSimilarityRespData, error) {
-	log.Printf("GetSimilarity(%s,%s)", text1, texts)
 	//通过http调用 emgedding_url 用EmbeddingResp接收结果
 	request := BatchSimilarityRequest{
 		TextA: text1,
